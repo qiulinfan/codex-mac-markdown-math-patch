@@ -37,3 +37,9 @@ The app is signed locally with your identity, so macOS will see it as different 
 - The source app and signing credentials are never included in the Git repository.
 
 There is no generic browser-preview MCP plugin in this repository.
+
+## When Codex updates
+
+Keep a copy of the currently working app before updating. A Codex update may replace this locally signed patch, and the updater may not accept an app re-signed with a different identity. Do not reuse this build's patch or bypass its hash checks on a newer app.
+
+Install an unmodified official new build and check its native Markdown preview first. If it still needs the fix, inspect the new bundled parser, create new build-specific edits and hashes, run the offline and real-app integration tests, then build and sign a separate copy. Confirm inline math, display math, and table formulas in that copy before replacing the installed app.
