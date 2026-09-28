@@ -1,0 +1,16 @@
+{
+  "name": "codex-mac-markdown-math-patch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test core/*.test.mjs packaging/*.test.mjs",
+    "test:core": "node --test core/*.test.mjs",
+    "test:packaging": "node --test packaging/*.test.mjs",
+    "build:mac": "node packaging/build-app.mjs build",
+    "verify:mac": "node packaging/build-app.mjs verify"
+  }
+}
