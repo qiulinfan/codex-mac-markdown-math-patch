@@ -19,3 +19,13 @@ belong to the formula in the middle cell.
 Currency stays text: $5 and $10; a range from $5-$10.
 
 Code stays source: `$x^2$`.
+
+Bold in a paragraph: **strong text** and **加粗文字** should have visibly heavier strokes.
+
+Bold in a table cell:
+
+| Sample | Emphasis |
+| --- | --- |
+| Strong | **加粗文字** |
+
+Bold code: **`identifier`** should remain monospace and appear bold.

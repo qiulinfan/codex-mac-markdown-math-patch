@@ -141,3 +141,25 @@ test('span editing retains original source outside edited bytes', async () => {
   const patched = await patchTargetJavaScript(source, target);
   assert.equal(patched.toString(), 'prefix function toy(value){return "after";}function next(){} suffix');
 });
+
+test('separate pinned spans in one asset preserve code between parser and style edits', async () => {
+  const source = Buffer.from('before function parser(){return "old";}function next(){} middle '
+    + 'const style=["links"];const after=1; end');
+  const parser = 'function parser(){return "old";}';
+  const style = 'const style=["links"];';
+  const target = {
+    path: 'invented.js', inputSha256: hash(source),
+    spans: [
+      { startAnchor: 'function parser(){', endAnchor: 'function next()', spanSha256: hash(parser),
+        edits: [{ from: parser.indexOf('"old"'), to: parser.indexOf('"old"') + 5, insert: '"new"' }] },
+      { startAnchor: 'const style=', endAnchor: 'const after=', spanSha256: hash(style),
+        edits: [{ from: style.indexOf(']'), to: style.indexOf(']'), insert: ',"strong"' }] },
+    ],
+  };
+  const patched = await patchTargetJavaScript(source, target);
+  assert.equal(patched.toString(), 'before function parser(){return "new";}function next(){} middle '
+    + 'const style=["links","strong"];const after=1; end');
+  const overlap = structuredClone(target);
+  overlap.spans[1] = { ...overlap.spans[0] };
+  await assert.rejects(patchTargetJavaScript(source, overlap), /Overlapping parser spans/);
+});

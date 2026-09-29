@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 export const SUPPORTED_BUILD = Object.freeze({
   version: '26.924.22138',
   inputAsarSha256: 'd0ba973179d2f717affd39e012b64a095464a54a51c6bccb7bc6b3d2a1cfba80',
-  outputAsarSha256: '9502f493c28478e400faf34245181ba131aedf43d129045e24282cacc7e45db5',
-  outputHeaderSha256: 'f3ab550d2c651b3310b1f6baed7d9073a44844d2a2ea3b38d83aa54fdd4c8b9b',
+  outputAsarSha256: '5b2a0c6457753060e5a02254ab8172040413d508aa59fc29221ad46e06850089',
+  outputHeaderSha256: '5a82b279eddbb7ddadd6b6ff67521b13cea7a9300cbd8806ab5d384b59eb803c',
   targets: [
     {
       path: 'webview/assets/app-shared-36eae88777f2.js',
@@ -24,10 +24,20 @@ export const SUPPORTED_BUILD = Object.freeze({
     {
       path: 'webview/assets/text-file-editor-tab-content.electron-21d7439dc837.js',
       inputSha256: '620f2a64dd5b8e482676e361c81fafa09534d8ad47ea74a384a00a7166a073ec',
-      spanSha256: '3e49ba45981a135e751a7172f4898a4fde70c5ca6b8587b70e51bda8b4969460',
-      startAnchor: 'function Gr(e,t,n=0,r,i=0){',
-      endAnchor: 'function qr(e,t,n,r)',
-      editsFile: 'table-span-edits.json',
+      spans: [
+        {
+          spanSha256: '3e49ba45981a135e751a7172f4898a4fde70c5ca6b8587b70e51bda8b4969460',
+          startAnchor: 'function Gr(e,t,n=0,r,i=0){',
+          endAnchor: 'function qr(e,t,n,r)',
+          editsFile: 'table-span-edits.json',
+        },
+        {
+          spanSha256: '4f2fb527fce146da8fdcabddade227d10a82102c8ed7f237373edd4a2bf2b350',
+          startAnchor: 'Qa=131072,$a=et(ct.define(',
+          endAnchor: ',eo=q.theme(',
+          editsFile: 'strong-span-edits.json',
+        },
+      ],
       requiredStrings: ['O9 as T', 'MathInline'],
     },
   ],
@@ -148,29 +158,40 @@ export async function patchTargetJavaScript(original, target) {
   for (const required of target.requiredStrings ?? []) {
     if (!source.includes(required)) throw new Error(`Missing expected target marker: ${required}`);
   }
-  const inline = uniqueSlice(source, target.startAnchor, target.endAnchor, target.spanSha256);
-  const payload = target.edits ? { format: 'span-edits-v1', edits: target.edits } :
-    JSON.parse(await readFile(new URL(target.editsFile, import.meta.url), 'utf8'));
-  if (payload.format !== 'span-edits-v1' || !Array.isArray(payload.edits) || !payload.edits.length) {
-    throw new Error(`Invalid authored edit list for ${target.path}`);
-  }
-  let revised = '';
-  let cursor = 0;
-  for (const edit of payload.edits) {
-    if (!Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) ||
-        edit.from < cursor || edit.to < edit.from || edit.to > inline.original.length ||
-        typeof edit.insert !== 'string') {
-      throw new Error(`Invalid or overlapping edit in ${target.path}`);
+  const spans = [];
+  for (const spec of target.spans ?? [target]) {
+    const inline = uniqueSlice(source, spec.startAnchor, spec.endAnchor, spec.spanSha256);
+    const payload = spec.edits ? { format: 'span-edits-v1', edits: spec.edits } :
+      JSON.parse(await readFile(new URL(spec.editsFile, import.meta.url), 'utf8'));
+    if (payload.format !== 'span-edits-v1' || !Array.isArray(payload.edits) || !payload.edits.length) {
+      throw new Error(`Invalid authored edit list for ${target.path}`);
     }
-    revised += inline.original.slice(cursor, edit.from) + edit.insert;
-    cursor = edit.to;
+    let revised = '';
+    let cursor = 0;
+    for (const edit of payload.edits) {
+      if (!Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) ||
+          edit.from < cursor || edit.to < edit.from || edit.to > inline.original.length ||
+          typeof edit.insert !== 'string') {
+        throw new Error(`Invalid or overlapping edit in ${target.path}`);
+      }
+      revised += inline.original.slice(cursor, edit.from) + edit.insert;
+      cursor = edit.to;
+    }
+    revised += inline.original.slice(cursor);
+    if (!revised.startsWith(spec.startAnchor) || revised.includes(spec.endAnchor)) {
+      throw new Error(`Edited parser structure is invalid: ${target.path}`);
+    }
+    spans.push({ ...inline, revised });
   }
-  revised += inline.original.slice(cursor);
-  if (!revised.startsWith(target.startAnchor) || revised.includes(target.endAnchor)) {
-    throw new Error(`Edited parser structure is invalid: ${target.path}`);
+  spans.sort((a, b) => a.first - b.first);
+  let patched = '';
+  let cursor = 0;
+  for (const span of spans) {
+    if (span.first < cursor) throw new Error(`Overlapping parser spans in ${target.path}`);
+    patched += source.slice(cursor, span.first) + span.revised;
+    cursor = span.end;
   }
-  const patched = source.slice(0, inline.first) + revised + source.slice(inline.end);
-  return Buffer.from(patched);
+  return Buffer.from(patched + source.slice(cursor));
 }
 
 function integrityFor(buffer, blockSize) {
